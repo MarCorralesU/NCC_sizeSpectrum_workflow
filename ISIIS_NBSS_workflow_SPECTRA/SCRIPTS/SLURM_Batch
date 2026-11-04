@@ -1,0 +1,717 @@
+#!/usr/bin/perl
+#########################################################
+# SLURM_Batch                                           #
+#########################################################
+## SLURM_Batch Changed by Chris on Oct 10, 2023.
+
+use strict;
+use warnings;
+use Carp;
+use Getopt::Std;
+use Cwd;
+use vars qw/ $opt_A $opt_N $opt_n $opt_o $opt_c $opt_t $opt_b $opt_m $opt_R $opt_r $opt_q $opt_D $opt_d $opt_M $opt_f $opt_F $opt_h $opt_p $opt_P $opt_S $opt_Q $opt_T/;
+
+
+###########################################################################
+# Start Variable declarations (and defaults where appropriate)            #
+###########################################################################
+my ($account,$nodelist,$number, $runId, $outdir, $Command, $tarray, $array_range, $default_tc, $arrayDirectory, $taskconcurrency, $queue, $rundir, $maxfile, $memfree, $memory, $debug, $email, $priority, $tasks_total, $processors, $default_shell,$quiet);
+$arrayDirectory = "";
+$default_tc = 50;
+$tasks_total = 0;
+$taskconcurrency = $default_tc;
+my ($cnt,$job_interval,$job_threshold,$sleep_interval) = (0,1000,50,30);
+my $menu_option = "";
+my $dir = Cwd::getcwd();
+my $sbatch_return;
+my $sbatch = "sbatch";
+
+my $bin_path = "$ENV{PATH}";
+my $ld_path = "$ENV{LD_LIBRARY_PATH}";
+
+#########################################################
+# Start Main body of Program                            #
+#########################################################
+
+&getopts('vi:A:N:n:c:t:T:b:D:o:m:f:F:r:p:P:q:R:M:hSdQ');
+if ($opt_h) {
+        &help_error();
+	&var_error();
+}
+&var_check();
+&main();
+
+
+#########################################################
+# Start of Main						#
+#########################################################
+sub main {
+ #
+ # Create a run folder
+ #
+ if ($outdir =~ m/^\//) {
+	$rundir = "$outdir";
+ }
+ else {
+	$rundir = "$outdir";
+ }
+ if (-d "$rundir") {
+ 	&directory_menu();
+ 	exit 0;
+ }
+ if (!-d "$rundir") {
+	mkdir("$rundir", 0755);
+        if (!-d "$rundir") {
+        	print "\n\t\tCould not Make Directory $rundir needed to process data! Exiting program.\n";
+                exit 0;
+        }
+ }
+ if (-d "$rundir" and $quiet==0) {
+	print "\n\t* Beginning the Data run\n";
+	print "\t\tSLURM RunID = $outdir\n";
+	print "\t\tDirectory = $rundir\n";
+ }
+
+ if ($number > 1) {
+	print "\t\t\tJob# = $number\n";
+ }
+ my $clusterOut;
+ if ($outdir =~ m/^\//) {
+	if ($number > 1) {
+        	$clusterOut = $rundir. "/SLURM_Batch_slurm.sh";
+	}
+	else {
+        	$clusterOut = $rundir. "/SLURM_Batch_".$number."_slurm.sh";
+	}
+ }
+ else {
+	if ($number > 1) {
+       		$clusterOut = $rundir. "/" . $outdir . "_slurm.sh";
+	}
+	else {
+       		$clusterOut = $rundir. "/" . $outdir . "_".$number."_slurm.sh";
+	}
+ }
+ open(OUT,">$clusterOut") or die "can't open '$clusterOut' $!";
+ if ($default_shell) {
+	print OUT "#!/bin/tcsh\n";
+ }
+ else {
+	print OUT "#!/bin/bash -l\n";
+ }
+
+#!/bin/bash
+#SBATCH --job-name=serial_job_test    # Job name
+#SBATCH --mail-type=be          # Mail events (NONE, BEGIN, END, FAIL, ALL)
+#SBATCH --mail-user=chris.sullivan@oregonstate.edu     # Where to send mail
+#SBATCH --ntasks=1                    # Run on a single CPU
+#SBATCH --mem=1mb                     # Job memory request
+#SBATCH --time=00:05:00               # Time limit hrs:min:sec
+#SBATCH --output=peter_test_%j.log   # Standard output and error log
+#SBATCH --partition ceoas
+
+
+ print OUT "# BEGIN SLRUM OPTIONS DECLARATIONS\n";
+ print OUT "# Export all environment variables\n";
+ print OUT "#SBATCH --export=ALL\n";
+ print OUT "#SBATCH --export=TMPDIR=/tmp\n";
+ print OUT "#SBATCH --propagate=NONE\n";
+ #print OUT "#SBATCH --time=3-00:00:00\n"; # Time limit hrs:min:sec, edited following TJ Olesky's reply. this is what was in the original code: #SBATCH --time=00:05:00
+#print OUT "#SBATCH --ntasks-per-node=64\n"; 
+ print OUT "# Your job name\n";
+ print OUT "#SBATCH --job-name=$outdir\n";
+ print OUT "#\n";
+ print OUT "# Use current working directory\n";
+ print OUT "#SBATCH --chdir=$dir\n";
+ print OUT "#\n";
+
+if($queue) {
+        print OUT "# Set queue to use\n";
+        print OUT "#SBATCH --partition=$queue\n";
+        print OUT "#\n";
+}
+if($nodelist) {
+
+        print OUT "# Set nodelist to use\n";
+        print OUT "#SBATCH --nodelist=$nodelist\n";
+        print OUT "#\n";
+}
+if($account) {
+        print OUT "# Set nodelist to use\n";
+        print OUT "#SBATCH --account=$account\n";
+        print OUT "#\n";
+}
+## SHAWN, added $maxfile, $memfree, $tarray
+if($maxfile) {
+        print OUT "# Set limit of file size creation: job will be killed when any file created exceeds this\n";
+        print OUT "#SBATCH --gres=h_fsize:$maxfile\n";
+        print OUT "#\n";
+}
+## if only one is specified, set them equal to that. If both are specified, they may be
+## independently set. If neither are specified.... do nothing. I don't know what I was thinking when I came up with
+## this goofy combination of if statements.
+if($memory) {
+        print OUT "# Set memory to request (mem_free) and the memory limit at which the job will be killed (h_vmem)\n";
+	if($memfree) {
+		print OUT "#SBATCH --mem=$memfree\n";
+ 	}
+ 	else {
+		print OUT "#SBATCH --mem=$memory\n";
+ 	}
+        print OUT "#\n";
+}
+else {
+	if($memfree) {
+            print OUT "# Set memory to request (mem)\n";
+			print OUT "#\$ --mem=$memfree\n";
+            print OUT "#\n";
+	}
+	## if they didn't specify either, don't include a directive, use SLURM defaults
+	else {
+	
+	}
+}
+
+if($arrayDirectory) {
+	my $array_count = `ls -1 $arrayDirectory | sed 's/\@//g' | sed -n '$array_range' | wc -l`; #also added the head -n 1000 here, also, include this to subset array | sed -n '1001,2000p' 
+	$tarray = "1-$array_count";
+}
+if($tarray) {
+       	print OUT "# Set array job range\n";
+       	print OUT "#SBATCH --array=$tarray\n";
+       	print OUT "#\n";
+}
+
+
+ ## SHAWN: don't use output files if the quiet option is set...
+ print OUT "#Output files for stdout and stderr\n";
+ if($quiet == 0) {
+	if($arrayDirectory) {
+        	print OUT "#SBATCH --output=$rundir/$rundir\_\%A_\%a.o\n";
+        	print OUT "#SBATCH --error=$rundir/$rundir\_\%A_\%a.e\n";
+	}
+	else {
+        	print OUT "#SBATCH --output=$rundir/$rundir.o\n";
+        	print OUT "#SBATCH --error=$rundir/$rundir.e\n";
+	}
+ }
+ else {
+        print OUT "#Output files for stdout and stderr\n";
+        print OUT "#SBATCH --output=/dev/null\n";
+        print OUT "#SBATCH --error=/dev/null\n";        
+ }
+ print OUT "#\n";
+        
+if ($tasks_total >= 1) {
+        print OUT "# Ask for this many tasks per job:\n";
+        print OUT "#SBATCH --tasks=$tasks_total\n";
+        print OUT "#\n";
+}
+if ($processors >= 2) {
+        print OUT "# Ask for this many slots for multi-threaded jobs:\n";
+        print OUT "#SBATCH --ntasks-per-node=$processors\n";
+	#print OUT "#SBATCH --tasks-per-node=$processors\n";
+        print OUT "#\n";
+}
+if ($email) {
+        print OUT "# Send an email at the beginning or end of the job (b and e), or if it's aborted or rescheduled (a)\n";
+        print OUT "#SBATCH --mail-user=$email\n";
+        print OUT "#SBATCH --mail-type=be\n";
+        print OUT "#\n";
+}
+if($arrayDirectory) {
+	my $array_count = `ls -1 $arrayDirectory | sed 's/\@//g' | sed -n '$array_range' | wc -l`; #this was edited using chatgpt's feedback, this is the original `ls -1 $arrayDirectory | wc -l`, and use this to subset:| sed -n '1001,2000p'
+	$tarray = "1-$array_count";
+	print OUT "# Make a file list from the input directory\n";
+	print OUT 'FILE_LIST=($(ls ';
+	print OUT "$arrayDirectory";
+	print OUT " | sed 's/\\@//g' | sed -n \"$array_range\"))"; #also edited following ChatGtP's feedback, it was only '))' also insert this to subset the array:| sed -n "1001,2000p"
+	print OUT "\n";
+	print OUT "# Get the array task ID and the corresponding file\n";
+	print OUT 'FILE=${FILE_LIST[$((SLURM_ARRAY_TASK_ID - 1))]}'; #'FILE=${FILE_LIST[$SLURM_ARRAY_TASK_ID]}';
+	print OUT "\n";
+}
+
+print OUT "# END SLURM OPTIONS DECLARATIONS\n";
+print OUT "#\n";
+
+if ($default_shell) {
+        	#print OUT "setenv PATH $bin_path'\n";
+        	print OUT "set path=($bin_path)\n";
+}
+else {
+        	print OUT "PATH=$bin_path\n";
+        	print OUT "LD_LIBRARY_PATH=$ld_path\n";
+       		print OUT "export PATH\n";
+}
+ print OUT "#\n";
+ print OUT "#\n";
+ print OUT "#The following auto-generated commands will be run by the execution node.\n";
+ print OUT "#We execute your command via /usr/bin/time with a custom format\n";
+ print OUT "#so that the memory usage and other stats can be tracked; note that\n";
+ print OUT "#GNU time v1.7 has a bug in that it reports 4X too much memory usage\n";
+ print OUT "source $ENV{HOME}/.bashrc\n";
+ print OUT "echo \"  Started on:           \" `/bin/hostname -s` \n";
+ print OUT "echo \"  Started at:           \" `/bin/date` \n";
+ if (!$default_shell) {
+	print OUT "/usr/bin/time -f \"\ ";
+	print OUT "\\\\tFull Command:                      %C\ ";
+	print OUT "\\\\n\\\\tMemory (kb):                       %M\ ";
+ 	print OUT "\\\\n\\\\t# SWAP  (freq):                    %W\ ";
+ 	print OUT "\\\\n\\\\t# Waits (freq):                    %w\ ";
+ 	print OUT "\\\\n\\\\tCPU (percent):                     %P\ ";
+ 	print OUT "\\\\n\\\\tTime (seconds):                    %e\ ";
+ 	print OUT "\\\\n\\\\tTime (hh:mm:ss.ms):                %E\ ";
+ 	print OUT "\\\\n\\\\tSystem CPU Time (seconds):         %S\ ";
+ 	print OUT "\\\\n\\\\tUser   CPU Time (seconds):         %U\ ";
+ 	print OUT "\" \\\n";
+ }
+ if($arrayDirectory) {
+    	print OUT 'echo "  Processing:           $FILE"';
+	print OUT "\n";
+ }
+ print OUT "$Command\n";
+ print OUT "echo \"  Finished at:           \" `date` \n";
+ close(OUT);
+
+my $cmd = $sbatch;
+	
+###################################################
+## Adding name of sbatch script to command to run,  #
+## then debug printing and cleaning up            #
+###################################################
+ $cmd .= " $clusterOut";
+
+if ($debug) {
+	print "\n\t* SBATCH Command = $cmd\n";
+	system("/bin/cat $clusterOut");
+}
+else {
+        open(QSUB, "$cmd |") or die "can't open sbatch: $!";
+        $sbatch_return = <QSUB>;
+        close(QSUB) or warn("can't close queue: $!");
+}
+if($quiet == 1) {
+        unlink("$clusterOut");
+	if(-d "$rundir") {
+              if(!rmdir("$rundir")) {
+                  print "Whoops, error when deleting the rundir using -Q (quiet). Perhaps the directory isn't empty for some reason?";
+              } 
+        }
+}
+    
+
+ if ($sbatch_return) {
+	print "\n\t* $sbatch_return\n" unless $quiet==1;
+ }
+ elsif (!$debug) {
+	print "\n\t* There was a problem submitting your job!\n\n";
+ }
+ else {
+	print "\n\t* Debug Done!\n\n";
+ }
+
+ exit 0;
+
+}
+
+#########################################################
+# Start of Subroutine "menu"                            #
+#########################################################
+sub directory_menu {
+
+
+ for ($menu_option !~ /^r{1}$/) {
+    print "\n\t\t\033[31m\033[1m Directory $outdir already exists! \033[0m\n\n";
+    print "\tDelete Current Dir:	\033[31m\033[1md\033[0m\n";
+    print "\tNew Dir Name:		\033[31m\033[1mo\033[0m\n";
+    print "\tExit:			\033[31m\033[1me\033[0m\n";
+    print "\n\tPlease enter a letter corresponding to an option:  ";
+    chomp ($menu_option = <STDIN>);
+
+    if ($menu_option !~ /^[dohse]$/) {
+        print "\n\n\tNot a valid option. Try again.\n";
+    } elsif ($menu_option =~ /^d{1}$/) {
+        print "\n\tDeleting Current Output Directory $outdir\n";
+	system("/bin/rm -r $outdir");
+	&main();
+    } elsif ($menu_option =~ /^o{1}$/) {
+        print "\n\tPlease enter a RunID and Output Filename:  ";chomp ($outdir = <STDIN>);
+	&main();
+    } elsif ($menu_option =~ /^e{1}$/) {
+        print "\n\tProgram quits.\n";
+        exit 0;
+    } else {
+        print "\n\tThis is a bug. Please report it. Thanks!\n";
+        exit 1;
+    }
+
+    redo;
+ }
+
+}
+
+#########################################################
+# Start of Subroutine "menu"                            #
+#########################################################
+sub menu {
+
+    #system("ETASubmit");
+    #exit 0;
+
+ for ($menu_option !~ /^r{1}$/) {
+    print "\n\t\t\033[31m\033[1m SLURM MENU \033[0m\n";
+    print "\t(items with a \"*\" are required)\n\n";
+    print "\t*Command to Run:		\033[31m\033[1mc\033[0m\n";
+    print "\t Max Memory (512M, 4G):		\033[31m\033[1mm\033[0m\n";
+    ## SHAWN, added max file, memfree, tarray
+    print "\t Array Job Range (eg 1-100):		\033[31m\033[1mt\033[0m\n";
+    ## SHAWN, added task concurrency Oct 24 2013
+    print "\t Array Job Maximum Task Concurrency (max array jobs to run simultaneously) (default: $default_tc):		\033[31m\033[1mtc\033[0m\n";
+    print "\t Free Memory (512M, 4G):		\033[31m\033[1mf\033[0m\n";
+    print "\t Max File Size (512M, 4G):		\033[31m\033[1mF\033[0m\n";
+    print "\t Num. Processors (1,2,4 etc):	\033[31m\033[1mP\033[0m\n";
+    print "\t QUEUE to Use:			\033[31m\033[1mq\033[0m\n";
+    print "\t*Run ID / Output:		\033[31m\033[1mr\033[0m\n";
+    print "\t Job Priority:			\033[31m\033[1mp\033[0m\n";
+    print "\t Email Address:			\033[31m\033[1mM\033[0m\n";
+    print "\t Change Shell:			\033[31m\033[1mS\033[0m\n";
+    print "\t Show Setup Info:		\033[31m\033[1mh\033[0m\n";
+    print "\t Submit Job:			\033[31m\033[1ms\033[0m\n";
+    print "\t Exit:				\033[31m\033[1me\033[0m\n";
+    print "\n   Please enter a letter corresponding to an option:  ";
+    chomp ($menu_option = <STDIN>);
+
+	## SHAWN, added f, F, t
+	## SHAWN, added b Oct 24 2013
+    if ($menu_option !~ /^[ctbmfForqhsSepPM]$/) {
+        print "\n\n\tNot a valid option. Try again.\n";
+    } elsif ($menu_option =~ /^c{1}$/) {
+        print "\n   Please enter a \"Command\" to run:  ";chomp ($Command = <STDIN>);
+    } elsif ($menu_option =~ /^r{1}$/) {
+        print "\n   Please enter a \"Run ID\":  ";chomp ($outdir = <STDIN>);
+    } elsif ($menu_option =~ /^o{1}$/) {
+        print "\n   Please enter a \"Run ID\":  ";chomp ($outdir = <STDIN>);
+      ## SHAWN, added f, F, t
+    } elsif ($menu_option =~ /^f{1}$/) {
+        print "\n   Please enter the \"Free Mem\" to request:  ";chomp ($memfree = <STDIN>);
+    } elsif ($menu_option =~ /^F{1}$/) {
+        print "\n   Please enter the \"MAX File Size\" to create:  ";chomp ($maxfile = <STDIN>);
+    } elsif ($menu_option =~ /^t{1}$/) {
+        print "\n   Please enter Job Array Range (e.g. 1-100):  ";chomp ($tarray = <STDIN>);
+      ## SHAWN, added tc Oct 24 2013
+    } elsif ($menu_option =~ /^b{1}$/) {
+        print "\n   Please enter Maximum Array Job Task Concurrency (e.g. 200):  ";chomp ($taskconcurrency = <STDIN>);
+    } elsif ($menu_option =~ /^m{1}$/) {
+        print "\n   Please enter the \"MAX Memory\" needed:  ";chomp ($memory = <STDIN>);
+    } elsif ($menu_option =~ /^M{1}$/) {
+        print "\n   Please enter the \"Email Address\" needed:  ";chomp ($email = <STDIN>);
+    } elsif ($menu_option =~ /^S{1}$/) {
+        print "\n   Please enter the \"Change Run Shell\" (default: bash):  ";chomp ($default_shell = <STDIN>);
+    } elsif ($menu_option =~ /^T{1}$/) {
+        print "\n   Please enter the \"Number of Tasks\" (1,2,4 etc):  ";chomp ($tasks_total = <STDIN>);
+    } elsif ($menu_option =~ /^P{1}$/) {
+        print "\n   Please enter the \"Number of Processors\" (1,2,4 etc):  ";chomp ($processors = <STDIN>);
+    } elsif ($menu_option =~ /^p{1}$/) {
+        print "\n   Please enter the \"Job Priority\" (Value between -10 and 10):  ";chomp ($priority = <STDIN>);
+    } elsif ($menu_option =~ /^q{1}$/) {
+        print "\n   Please enter the \"QUEUE\" to use:  ";chomp ($queue = <STDIN>);
+    } elsif ($menu_option =~ /^h{1}$/) {
+        print "\n   Current Setup\n\n";
+        if ($Command) {
+        	print "\t\tCommand:	$Command\n";
+        }
+        if ($outdir) {
+        	print "\t\tRun ID:	$outdir\n";
+        }
+        ## SHAWN, $maxfile, $memfree, $tarray
+        if ($maxfile) {
+        	print "\t\tMAX File Size:	$maxfile\n";
+        }
+        if ($memfree) {
+        	print "\t\tFree Mem Requested:	$memfree\n";
+        }
+        if ($tarray) {
+        	print "\t\tArray Job Range:	$tarray\n";
+        }
+        ## SHAWN, added $taskconcurrency Oct 24 2013
+        if ($taskconcurrency) {
+        	print "\t\tMaximum Array Job Task Concurrency:	$taskconcurrency\n";
+        }
+        if ($memory) {
+        	print "\t\tMAX Memory:	$memory\n";
+        }
+        if ($tasks_total) {
+        	print "\t\tTasks:	$tasks_total\n";
+        }
+        if ($processors) {
+        	print "\t\tProcessors:	$processors\n";
+        }
+        if ($email) {
+        	print "\t\tEmail:	$email\n";
+        }
+        if ($default_shell) {
+        	print "\t\tShell:	tcsh\n";
+        }
+	else {
+        	print "\t\tShell:	bash\n";
+	}
+        if ($priority) {
+        	print "\t\tPriority:	$priority\n";
+        }
+        if ($queue) {
+        	print "\t\tQUEUE:	$queue\n";
+        }
+        print "\n   Please press \"Enter\" when you are done:  ";
+        chomp ($menu_option = <STDIN>);
+    } elsif ($menu_option =~ /^s{1}$/) {
+        &var_check();
+	&main();
+
+    } elsif ($menu_option =~ /^e{1}$/) {
+        print "\n   Program quits.\n";
+        exit 0;
+
+    } else {
+        print "\n   This is a bug. Please report it. Thanks!\n";
+        exit 1;
+    }
+
+    redo;
+ }
+
+}
+
+#########################################################
+# End of Subroutine "menu"                              #
+#########################################################
+
+########################################################
+# Start of Varriable Check Subroutine "var_check"       #
+# if we came from command line do we have information   #
+# and is it the correct info.. if not go to the menu... #
+# if we came from the web it should all check out...    #
+#########################################################
+
+sub var_check {
+  if ($opt_A) {
+   $account = $opt_A;
+  }
+  if ($opt_N) {
+   $nodelist = $opt_N;
+  }
+  if ($opt_n) {
+   $number = $opt_n;
+  } else {
+   $number = 1;
+  }
+  if ($opt_r) {
+   if ($opt_r =~ "/") {   # Added by shawn Apr 23 2018
+     print "\n\033[31m\033[1m Sorry, the -r option must be a folder name to create/overwrite in the current working directory, not a path. (No /'s allowed.) \033[0m \n\n";
+     exit;
+   }
+   $outdir = $opt_r;
+  } else {
+   if (!$outdir && !$opt_o) {
+     #&menu();
+     &var_error();
+   }
+  }
+  if ($opt_o) {
+   if ($opt_o =~ "/") {   # Added by shawn Apr 23 2018
+     print "\n\033[31m\033[1m Sorry, the -o option must be a folder name to create/overwrite in the current working directory, not a path. (No /'s allowed.) \033[0m \n\n";
+     exit;
+   }
+   $outdir = $opt_o;
+  } else {
+   if (!$outdir && !$opt_r) {
+     #&menu();
+     &var_error();
+   }
+  }
+  $quiet=0;
+  if (defined $opt_Q) {
+   $quiet = 1;
+  }
+  if ($opt_m) {
+   if ( $opt_m !~ /^\d+(\.\d+)?(g|m)$/ ) {    # added by Shawn Apr 23 2018
+     print "\n\033[31m\033[1m Whoops, the -m option should be specified with a \"g\" or \"m\" suffix; as in -m 20g or -m 2300m.\033[0m \n\n";
+     exit;
+   }
+   $memory = $opt_m;
+  }
+  ## SHAWN, $opt_f, $opt_F, $opt_t
+  if ($opt_F) {
+   if ( $opt_F !~ /^\d+(\.\d+)?(G|M)$/ ) {    # added by Shawn Apr 23 2018
+     print "\n\033[31m\033[1m Whoops, the -F option should be specified with a G or M suffix; as in -F 20G or -F 2300M.\033[0m \n\n";
+     exit;
+   } 
+   $maxfile = $opt_F;
+  }
+  if ($opt_f) {
+   if ( $opt_f !~ /^\d+(\.\d+)?(G|M)$/ ) {    # added by Shawn Apr 23 2018
+     print "\n\033[31m\033[1m Whoops, the -f option should be specified with a G or M suffix; as in -f 20G or -f 2300M.\033[0m \n\n";
+     exit;
+   } 
+   $memfree = $opt_f;
+  }
+  if ($opt_t) {
+   $tarray = $opt_t;
+  }
+  if ($opt_D) {
+   $arrayDirectory = $opt_D;
+  }
+  ## SHAWN, $opt_b Oct 24 2013
+  if ($opt_b) {
+   $taskconcurrency = $opt_b;
+  }
+  if ($opt_c) {
+   $Command = $opt_c;
+  } else {
+   if (!$Command) {
+     #&menu();
+     &var_error();
+   }
+  }
+  if ($opt_T) {
+   $tasks_total = $opt_T;
+  }
+  if ($opt_P) {
+   if ( $opt_P !~ /^\d+$/ ) {    # added by Shawn Apr 23 2018
+     print "\n\033[31m\033[1m Whoops, the -P option (to specify the number of processors, or slots) must be an integer.\033[0m \n\n";
+     exit;
+   } 
+   $processors = $opt_P;
+  }
+  else {
+   if (!$processors) {
+     $processors = 1;
+   }
+  }
+  if ($opt_p) {  # Warning added by Shawn on Apr 23, 2018
+   print "\n\033[31m\033[1m Warning: You are trying to adjust the 'priority' of your job by using the -p option to SLURM_Batch. This is uncommon; perhaps you meant to specify the number of processors or slots, in which case you should use the -P option for SLURM_Batch.\033[0m \n\n";
+   $priority = $opt_p;
+  }
+  else {
+   $priority = 0;
+  }
+  if ($opt_M) {
+   $email = $opt_M;
+  }
+  if ($opt_R) {
+   $array_range = $opt_R;
+  }
+  else {
+   $array_range = "0001,1000p";
+  }
+  if ($opt_q) {
+   $queue = $opt_q;
+  }
+  if ($opt_d) {
+   $debug = 1;
+  }
+  if ($opt_S) {
+   $default_shell = 1;
+  }
+}
+
+#########################################################
+# End of Varriable Check Subroutine "var_check"         #
+#########################################################
+
+#########################################################
+# Start of Varriable error Subroutine "var_error"       #
+#########################################################
+
+sub var_error {
+
+  print "\n";
+  print "  You did not provide all the correct command line arguments\n\n";	
+  print "  Basic Usage:\n\n";
+  print "\033[31m\033[1m  SLURM_Batch -c '<command>' -r <Run_ID> -q <queue or partition> -N <nodelist> -A <account> -m <max_memory> -f <free_mem_request> -F <max_file_size> -P <number_processors_pernode> -T <number_of_tasks> -p <priority> -M <email_address> -R <array_range> -Q \033[0m \n";
+  print "\n";
+  print "\n";
+  print " \033[31m\033[1m-c\033[0m	The command to submit. (REQUIRED: Make sure to use '')\n";
+  print "\n";
+  print " \033[31m\033[1m-r\033[0m	The SLURM RunID and Log Output Directory Name. (REQUIRED)\n";
+  print "\n";
+  print " \033[31m\033[1m-q\033[0m	The QUEUE or Partition to use. (default to use any partition you have access to)\n";
+  print "\n";
+  print " \033[31m\033[1m-N\033[0m	The NODE to use. (default to use any node you have access to)\n";
+  print "\n";
+  print " \033[31m\033[1m-A\033[0m	The Account to use. (-A option in slurm)\n";
+  print "\n";
+  print " \033[31m\033[1m-t\033[0m	Array Job Range to submit (e.g. 1-100).\n";
+  print "\n";
+  print " \033[31m\033[1m-b\033[0m	Array Job Maximum Task Concurrency ('batch size'; default $default_tc).\n";
+  print "\n";
+  print " \033[31m\033[1m-D\033[0m	Array Job Directory of Files (using this overides the -t option).\n";
+  print "\n";
+  print " \033[31m\033[1m-R\033[0m	Array Job Range of Files.\n";
+  print "\n";
+  print " \033[31m\033[1m-F\033[0m	Kill the job if any created file exceeds this size (100M, 1G, 4G, 32G etc.).\n";
+  print "\n";
+  print " \033[31m\033[1m-f\033[0m	Free memory to request on the machine to run this job (100M, 1G, 4G, 32G etc.).\n";
+  print "\n";
+  print " \033[31m\033[1m-m\033[0m	Maximum memory this job may use (kill if exceeded) (100M, 1G, 4G, 32G etc.).\n";
+  print "\n";
+  print " \033[31m\033[1m-T\033[0m	The number of tasks total for the application (default 0).\n";
+  print "\n";
+  print " \033[31m\033[1m-P\033[0m	The number of processors needed for this job if you have a threaded application (default 1).\n";
+  print "\n";
+  print " \033[31m\033[1m-Q\033[0m	Don't print any output to the screen. (Use then when you are running many jobs at once).\n";
+  print "\n";
+  print " \033[31m\033[1m-p\033[0m	The priority of job submitted. (range -10 to 10, default 0)\n";
+  print "\n";
+  print " \033[31m\033[1m-M\033[0m	Email address to send notification at beginning and end of job.\n";
+  print "\n";
+  print " \033[31m\033[1m-S\033[0m	Shell option: Setting this option will change the default shell from \"bash\" to \"tcsh\". (defualt \"bash\").\n";
+  print "\n";
+  print " \033[31m\033[1m-h\033[0m	Print Help Page.\n";
+  print "\n";
+  print "  \033[31m\033[1mExample Command using \"all.q\" partition:\033[0m\n";
+  print "\t\tSLURM_Batch -c 'date; sleep 30; date' -r DateSleep30\n";
+  print "  \033[31m\033[1mExample Command using \"aspen5\" node on \"all.q\" partition:\033[0m\n";
+  print "\t\tSLURM_Batch -c 'date; sleep 30; date' -r DateSleep30 -q all.q -N aspen5\n";
+  print "  \033[31m\033[1mExample Command using array jobs on a directory of files (each file is replaced by \$FILE automagically):\033[0m\n";
+  print "\t\tSLURM_Batch -c 'echo \$FILE' -r ArrayJob -D /path/to/dir/with/files -q all.q\n";
+  print "\n";
+  exit 0;
+
+}
+
+sub help_error {
+  print "\n";
+  print " Please note the following:\n";
+  print "    To ensure your jobs do not overrun resources, please specify the amount\n";
+  print "    of RAM to request for the job using the -f flag and the maximum memory\n";
+  print "    allowed using the -m flag (it is recommended that these are set equal,\n";
+  print "    and in fact if only one is specified the other will be set equal). Also,\n";
+  print "    please specify a reasonable maximum file size using the -F flag (if any\n";
+  print "    single file created by the job exceeds this size the job will be killed).\n";
+  print "\n";
+  print " Please be aware that\n";
+  print "    large numbers of simultaneous jobs will likely compete for network bandwidth\n";
+  print "    and hard drive access when reading and writing data, providing a limit to\n";
+  print "    effective scalability and unecessarily taxing the infrastructure.\n";
+  print "\n";  
+  print " For example, the command:\n";
+  print "    SLURM_Batch -c 'cp fileA.\$SLURM_TASK_ID fileB.\$SLURM_TASK_ID \$TMP_DIR; python3 command.py -i \$TMP_DIR/fileA.\$SLURM_TASK_ID' -t 1-3 -f 4G -F 10G -r CopyAndRun_StdOuts\n";
+  print "\n";
+  print "    will copy fileA.1, fileA.2, and fileA.3 to fileB.1, fileB.2, and fileB.3\n";
+  print "    respectively to \$TMP_DIR and then run the command. Further, given the 10G\n";
+  print "    limit on file creation size has been set using the -F flag, that job \n";
+  print "    will be killed if any of the files exceed 10G in size. It is also worth\n";
+  print "    noting that the batch system must be able to properly parse the \$SLURM_TASK_ID\n";
+  print "    variable, so it should not immediately proceed an alphanumeric character;\n";
+  print "    for example, \"file.\$SLURM_TASK_IDTXT\" will not be replaced with \"file.1TXT\".\n";
+  print "\n";
+  print " For questions, bug reports, or suggestions, contact: \n";
+  print "    support\@cqls.oregonstate.edu\n";
+  print "\n";
+
+}
+
+#########################################################
+# End of Varriable error Subroutine "var_error"         #
+#########################################################

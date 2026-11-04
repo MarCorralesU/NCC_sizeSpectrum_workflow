@@ -1,0 +1,11 @@
+.DS_Store
+*.Rproj
+.Ruserdata
+.Rhistory
+.RData
+.Renv
+*.pyc
+__pycache__/
+env/
+.env
+/ISIIS_NBSS_workflow_SPECTRA/ancillary/tar_lists/
