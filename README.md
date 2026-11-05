@@ -164,7 +164,7 @@ and test/legacy code still needs to be removed. The repostitory owner will do so
 
 ## Citation
 
-If you use this code, please cite the associated publication (to be added).
+If you use this code, please cite the associated publication: Corrales-Ugalde, M., S. Sponaugle, E. Conser, M. Schmid, K. R. Sutherland, C. Sullivan, B. Wang, R. K. Cowen (*Under review*). Seston and plankton size spectra variability in a highly productive Eastern Boundary Current System (**submitted to Progress in Oceanography**).
 
 ## License
 
