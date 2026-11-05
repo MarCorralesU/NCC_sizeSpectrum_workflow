@@ -1,6 +1,23 @@
+# =============================================================================
+# Python requirements for NCC-SPECTRA_sizeSpectrum_workflow
+# =============================================================================
+# Install with:
+#     python3 -m pip install -r requirements.txt
+#
+# Tested/expected: Python >= 3.9 (f-strings require >= 3.6; 3.9+ recommended).
+#
+# Only genuine third-party packages are listed below. The scripts also import
+# these modules from the Python standard library (nothing to install):
+#     csv, datetime, getopt, glob, math, os, pathlib, random, re,
+#     shutil, subprocess, sys, time
+#
+# =============================================================================
+
+# Computer vision (imported as `cv2`) -- used by calculate_dark_pixels.py
 opencv-python>=4.8
+
+# Array/math operations (imported as `numpy`) -- used by calculate_dark_pixels.py
 numpy>=1.24
+
+# Tabular CSV I/O (imported as `pandas`) -- used by Process_TarBall_PixelCount.py
 pandas>=2.0
-pathlib>=1.0
-shutil  # standard library
-glob2  # standard library

@@ -10,3 +10,7 @@ env/
 .env
 /ISIIS_NBSS_workflow_SPECTRA/ancillary/tar_lists/
 /ISIIS_NBSS_workflow_MBON_ISIIS-2/ancillary/MBON_size_csv_paths.txt
+# Ignore scripts numbered 6 or higher
+/ISIIS_NBSS_workflow_*/SCRIPTS/[6-9]_*
+/ISIIS_NBSS_workflow_*/SCRIPTS/[1-9][0-9]_*
+
